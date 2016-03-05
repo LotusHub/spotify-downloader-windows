@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="text/javascript" src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/bootstrap.min.css" />
+    <link rel="stylesheet" type="text/css" href="/css/style.css" />
+    <title>Spotify Downloader</title>
+    <script type="text/javascript" src="/js/jquery-1.11.3.min.js"></script>
+    <script type="text/javascript" src="/js/parse.js"></script>
+    <script type="text/javascript" src="/js/base62.js"></script>
+    <script type="text/javascript" src="/js/bootstrap.min.js"></script>
+  </head>
+  <body>
+    <div id="loginOverlay">
+      <h1 id="logging_in" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); visibility: hidden;">Logging in...</h1>
+      <div id="loginOverlayContainer" style="visibility: hidden;">
+        <h1>Spotify Login</h1>
+        <form id="auth_login">
+          <p><input type="text" id="username" value="" placeholder="Username" autocomplete="off" />
+          <input type="password" id="password" value="" placeholder="Password" /></p>
+          <p><input type="submit" id="login" class="gSubmit" value="Login" /></p>
+		  <p id="login_error" style="display: none;">test.</p>
+        </form>
+      </div>
+    </div>
+    <button id="settings" type="button" data-toggle="modal" data-target="#settingsModal"></button>
+    <button id="updateBtn" type="button" data-toggle="modal" data-target="#updateModal" class="btn btn-primary">Update</button>
+
+    <div id="updateModal" class="modal fade" role="dialog">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal">&times;</button>
+            <h4 class="modal-title">Check for updates..</h4>
+          </div>
+          <div class="modal-body">
+            Check for updates..
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="settingsModal" class="modal fade" role="dialog">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal">&times;</button>
+            <h4 class="modal-title">Spotify Downloader Settings</h4>
+          </div>
+          <div class="modal-body">
+            <form id="settings_form">
+              <table style="width: 100%; table-layout: fixed;">
+                <tr>
+                  <td>Username / Password:</td>
+                  <td><input type="text" name="username" placeholder="Username" /><br /><input type="password" name="password" placeholder="Passwort" /></td>
+                </tr>
+                <tr>
+                  <td>Track names:</td>
+                  <td><input type="text" name="einzeltrack_namen" value="%artist% - %title%" /></td>
+                </tr>
+                <tr>
+                  <td>Playlist-Track names:</td>
+                  <td><input type="text" name="playlisttrack_namen" value="%number% - %artist% - %title%" /></td>
+                </tr>
+                <tr>
+                  <td>Create M3U (Playlist) file: </td>
+                  <td><input type="checkbox" name="m3u_datei_erstellen" value="create_m3u"/></td>
+                </tr>
+              </table>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" data-dismiss="modal" id="save_settings">Save</button>
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="top_head">
+      <h1>Spotify MP3 Downloader</h1>
+    </div>
+
+    <p id="chooseView">
+      <input id="url" type="radio" name="view" value="fromURL" checked />
+      <label for="url">Download from URL</label>
+      <input id="playlists" type="radio" name="view" value="showPlaylists" />
+      <label for="playlists">My Playlists</label>
+      <input id="search" type="radio" name="view" value="fromSearch" />
+      <label for="search">Search</label>
+    </p>
+
+    <div id="views">
+      <div id="fromURL">
+        <form id="download">
+          <p><input type="text" id="song_uri" class="flatInput" value="" placeholder="Song or Playlist URI/URL" /></p>
+          <p><input type="submit" id="downloadUri" class="gSubmit" value="Download!" /></p>
+        </form>
+      </div>
+      <div id="tracks" style="display: none;">
+        <a href="#" id="clearTracksTable">Clear list</a>
+        <table id="tracksTable">
+          <thead>
+            <tr>
+              <td>Name</td>
+              <td>Size</td>
+              <td>Downloaded</td>
+              <td>Failed</td>
+            </tr>
+          </thead>
+          <tbody>
+          </tbody>
+        </table>
+      </div>
+      <div id="showPlaylists" class="trackTable" style="display: none;">
+        <table>
+          <thead>
+            <tr>
+              <td>Playlist name</td>
+              <td>Tracks</td>
+              <td> </td>
+            </tr>
+          </thead>
+          <tbody>
+          </tbody>
+        </table>
+      </div>
+      <div id="fromSearch" class="trackTable" style="display: none;">
+        <form id="searchForm">
+          <input type="text" id="searchSong" class="flatInput" value="" placeholder="Song name" />
+          <input type="submit" id="searchSubmit" class="gSubmit" value="Search!" />
+        </form>
+        <table>
+          <thead>
+            <tr>
+              <td>Track name</td>
+              <td>Artist</td>
+              <td>Album</td>
+              <td> </td>
+            </tr>
+          </thead>
+          <tbody>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <embed id="spotifyPlayer" src="//localhost:1717/pingpong/player.swf" type="application/x-shockwave-flash" style="visibility: hidden; height: 0px; width: 0px;"></embed>
+
+    <script type="text/javascript">
+      var socket = io.connect( window.location.href );
+
+      function getCookie(cname) {
+        var name = cname + "=";
+        var ca = document.cookie.split(';');
+        for(var i=0; i<ca.length; i++) {
+            var c = ca[i];
+            while (c.charAt(0)==' ') c = c.substring(1);
+            if (c.indexOf(name) == 0) return c.substring(name.length, c.length);
+        }
+        return "";
+      }
+
+      function decodeHtml(html) {
+        var txt = document.createElement("textarea");
+        txt.innerHTML = html;
+        return txt.value;
+      }
+
+      function login() {
+        socket.emit("login", {username: document.getElementById("username").value, password: document.getElementById("password").value});
+      }
+
+      function getSettings() {
+        var trackName = document.getElementById('settings_form')["einzeltrack_namen"].value;
+        var playlistTrackName = document.getElementById('settings_form')["playlisttrack_namen"].value;
+        var m3uFile = document.getElementById('settings_form')["m3u_datei_erstellen"].checked;
+        var settings = {
+          trackName: trackName,
+          playlistTrackName: playlistTrackName,
+          m3uFile: m3uFile
+        };
+        return settings;
+      }
+
+      function addToQueue(uri) {
+        uri = uri.replace("player.spotify.com", "play.spotify.com");
+        if(uri.indexOf('open.spotify.com') > -1) {
+          uri = uri.replace('http://open.spotify.com/', 'spotify:');
+          uri = uri.replace('https://open.spotify.com/', 'spotify:');
+          uri = uri.replace(/\//g, ':');
+        } else if(uri.indexOf('play.spotify.com') > -1) {
+          uri = uri.replace('http://play.spotify.com/', 'spotify:');
+          uri = uri.replace('https://play.spotify.com/', 'spotify:');
+          uri = uri.replace(/\//g, ':');
+        }
+       
+        var item = {};
+
+        item.id = "id" + Math.random().toString(36).substring(2);
+        item.downloaded = 0;
+        item.failed = 0;
+        item.size = "1";
+        item.settings = getSettings();
+
+        if(uri.indexOf(':track:') > -1) {
+          item.type = "track";
+          item.uri = uri;
+          item.settings.filename = item.settings.trackName;
+        } else if(uri.indexOf(':playlist:') > -1) {
+          item.type = "playlist";
+          item.uri = uri;
+          item.settings.filename = item.settings.playlistTrackName;
+        } else if(uri.indexOf(':album:') > -1) {
+          item.type = "album";
+          item.uri = uri;
+          item.settings.filename = item.settings.playlistTrackName;
+        } else if(uri.indexOf(':artist:')) {
+          item.type = "artist";
+          item.uri = uri;
+          item.settings.filename = item.settings.playlistTrackName;
+        } else {
+          alert("Unsupported URI/URL");
+          return;
+        }
+        console.log(item);
+        socket.emit("addToQueue", {item: item});
+      }
+
+      document.getElementById('updateBtn').addEventListener('click', function(e) {
+        socket.emit('update_request', {});
+      });
+
+      document.getElementById('auth_login').onsubmit = function(ev) {
+        ev.preventDefault();
+        login();
+        return false;
+      }
+
+      var avalViews = document.getElementById('chooseView').getElementsByTagName('input');
+      var actViews = document.getElementById('views').getElementsByTagName('div');
+      for(var i = 0; i < avalViews.length; i++) {
+        avalViews[i].onchange = function(e) {
+          for(var k = 0; k < actViews.length; k++) {
+            if(actViews[k].id != "tracks") {
+              actViews[k].style.display = "none";
+            }
+          }
+          for(var k = 0; k < actViews.length; k++) {
+            if(avalViews[k] && avalViews[k].checked) {
+              document.getElementById(avalViews[k].value).style.display = "block";
+            }
+          }
+          //document.getElementById("tracks").style.display = "inline-block";
+        }
+      }
+
+      document.getElementById('download').onsubmit = function(ev) {
+        ev.preventDefault();
+        addToQueue(document.getElementById('song_uri').value);
+        return false;
+      }
+
+      document.getElementById('clearTracksTable').onclick = function(ev) {
+        ev.preventDefault();
+        document.getElementById('tracksTable').getElementsByTagName('tbody')[0].innerHTML = "";
+        return false;
+      }
+
+      document.getElementById('searchForm').onsubmit = function(ev) {
+        ev.preventDefault();
+        document.getElementById('fromSearch').getElementsByTagName('tbody')[0].innerHTML = "";
+        socket.emit("search", {title: document.getElementById("searchSong").value});
+        return false;
+      }
+
+      //Initialize Settings
+      var setting_inputs = document.getElementById('settings_form').getElementsByTagName('input');
+      for(var i = 0; i < setting_inputs.length; i++) {
+        if(getCookie(setting_inputs[i].name) != "") {
+          setting_inputs[i].value = getCookie(setting_inputs[i].name);
+          if(setting_inputs[i].name == "username") {
+            document.getElementById('username').value = setting_inputs[i].value;
+          } else if(setting_inputs[i].name == "password") {
+            document.getElementById('password').value = setting_inputs[i].value;
+          } else if(setting_inputs[i].name == "m3u_datei_erstellen") {
+            setting_inputs[i].checked = true;
+          }
+        }
+      }
+
+      document.getElementById('save_settings').onclick = function(ev) {
+        ev.preventDefault();
+        for(var i = 0; i < setting_inputs.length; i++) {
+          var expires_milliseconds = (new Date()).getTime() + (3600 * 1000 * 24 * 365 * 10)
+          document.cookie = setting_inputs[i].name + "=" + setting_inputs[i].value + "; expires=" + (new Date(expires_milliseconds)).toUTCString();
+          if(setting_inputs[i].type == "checkbox" && !setting_inputs[i].checked) {
+            document.cookie = setting_inputs[i].name + "=; expires=" + (new Date(expires_milliseconds)).toUTCString();
+          }
+        }
+        return true;
+      }
+
+      socket.on("login", function(data) {
+        if(data.success) {
+          document.getElementById('loginOverlay').style.display = "none";
+          var expires_milliseconds = (new Date()).getTime() + (3600 * 1000 * 24 * 365 * 10);
+          document.cookie = "username" + "=" + document.getElementById("username").value + "; expires=" + (new Date(expires_milliseconds)).toUTCString();
+          document.cookie = "password" + "=" + document.getElementById("password").value + "; expires=" + (new Date(expires_milliseconds)).toUTCString();
+        } else {
+          document.getElementById('loginOverlayContainer').style.visibility = "visible";
+          document.getElementById('login_error').style.display = "block";
+          document.getElementById('logging_in').style.visibility = "hidden";
+        }
+      });
+
+      //Ping Pong
+      socket.on('ping_pong', function(result) {
+        var spotifyPlayer = document.getElementById('spotifyPlayer');
+        try {
+          var pong = spotifyPlayer.sp_run(result.ping);
+        }
+        catch (e) {
+          socket.emit('pong', {pong: result.ping + ':'});
+        }
+
+        socket.emit('pong', {pong: result.ping + ':' + pong});
+      });
+
+      socket.on('rootlist', function(result) {
+        var tableBody = document.getElementById('showPlaylists').getElementsByTagName('tbody')[0];
+        for(var i = 0; i < result.items.length; i++) {
+          var newRow = tableBody.insertRow(tableBody.rows.length);
+          var title = newRow.insertCell(0);
+          title.appendChild(document.createTextNode(result.items[i].title));
+          var tracks = newRow.insertCell(1);
+          tracks.appendChild(document.createTextNode(result.items[i].tracks));
+          var download = newRow.insertCell(2);
+          var dlButton = document.createElement('a');
+          dlButton.href = "#";
+          dlButton.dataset.uri = result.items[i].uri;
+          dlButton.innerHTML = "Download"
+          dlButton.onclick = function(e) {
+            e.preventDefault();
+            addToQueue(e.target.dataset.uri);
+            return false;
+          }
+          download.appendChild(dlButton);
+        }
+      });
+      
+      socket.on('search', function(result) {
+        var XML = new DOMParser().parseFromString(result.xml, "text/xml");
+        var obj = JSON.parse(xml2json(XML, ""));
+        if(!obj.result.tracks) {
+          return;
+        }
+        var tracks = obj.result.tracks.track;
+        var tableBody = document.getElementById('fromSearch').getElementsByTagName('tbody')[0];
+        for(var i = 0; i < tracks.length; i++) {
+          var newRow = tableBody.insertRow(tableBody.rows.length);
+          var title = newRow.insertCell(0);
+          title.appendChild(document.createTextNode(decodeHtml(tracks[i].title)));
+          var artist = newRow.insertCell(1);
+          artist.appendChild(document.createTextNode(decodeHtml(tracks[i].artist)));
+          var album = newRow.insertCell(2);
+          album.appendChild(document.createTextNode(decodeHtml(tracks[i].album)));
+          var download = newRow.insertCell(3);
+          var dlButton = document.createElement('a');
+          dlButton.href = "#";
+          var uri = base62.fromHex(tracks[i].id, 22);
+          dlButton.dataset.uri = 'spotify:track:' + uri;
+          dlButton.innerHTML = "Download"
+          dlButton.onclick = function(e) {
+            e.preventDefault();
+            addToQueue(e.target.dataset.uri);
+            return false;
+          }
+          download.appendChild(dlButton);
+        }
+      });
+
+      socket.on('addToQueue', function(result) {
+        document.getElementById('tracks').style.display = "block";
+        var tableBody = document.getElementById('tracksTable').getElementsByTagName('tbody')[0];
+        var newRow = tableBody.insertRow(tableBody.rows.length);
+        newRow.id = result.item.id;
+        var title = newRow.insertCell(0);
+        title.appendChild(document.createTextNode(decodeHtml(result.item.name)));
+        title.setAttribute("class", "queueTitle");
+        var size = newRow.insertCell(1);
+        size.appendChild(document.createTextNode(decodeHtml(result.item.size)));
+        size.setAttribute("class", "queueSize");
+        var downloaded = newRow.insertCell(2);
+        downloaded.appendChild(document.createTextNode(decodeHtml(result.item.downloaded)));
+        downloaded.setAttribute("class", "queueDownloaded");
+        var failed = newRow.insertCell(3);
+        failed.appendChild(document.createTextNode(decodeHtml(result.item.failed)));
+        failed.setAttribute("class", "queueFailed");
+      });
+
+      socket.on('updateQueue', function(result) {
+        document.getElementById(result.id).getElementsByClassName("queueDownloaded")[0].innerHTML = result.downloaded;
+        document.getElementById(result.id).getElementsByClassName("queueFailed")[0].innerHTML = result.failed;
+        if(result.failed == 0 && ((result.downloaded + result.failed) >= result.size)) {
+          document.getElementById(result.id).setAttribute("class", "successDownload");
+        } else if(result.downloaded == 0 && ((result.downloaded + result.failedd) >= result.size)) {
+          document.getElementById(result.id).setAttribute("class", "failedDownload");
+        }
+      });
+
+      socket.on('requestLogin', function(result) {
+        if(getCookie("username") !== "" && getCookie("password") !== "") {
+          document.getElementById("username").value = getCookie("username");
+          document.getElementById("password").value = getCookie("password");
+          login();
+          document.getElementById('loginOverlay').style.display = "block";
+          document.getElementById('logging_in').style.visibility = "visible";
+        } else {
+          document.getElementById('loginOverlayContainer').style.visibility = "visible";
+        }
+      });
+
+      socket.on('update_request', function(result) {
+        if(result.url) {
+          document.getElementById('updateModal').getElementsByClassName('modal-title')[0].innerHTML = "Update available!"
+          document.getElementById('updateModal').getElementsByClassName('modal-body')[0].innerHTML = '<a href="' + result.url + '" target="_blank">Download new version</a><br />';
+        } else if(result.error) {
+          document.getElementById('updateModal').getElementsByClassName('modal-title')[0].innerHTML = "Update failed"
+          document.getElementById('updateModal').getElementsByClassName('modal-body')[0].innerHTML = "Unable to download update :/";
+        } else {
+          document.getElementById('updateModal').getElementsByClassName('modal-title')[0].innerHTML = "No update available"
+          document.getElementById('updateModal').getElementsByClassName('modal-body')[0].innerHTML = "No update available! :(";
+        }
+      });
+
+    </script>
+
+  </body>
+</html>
